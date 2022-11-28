@@ -479,15 +479,16 @@ exportSignatureDer (Signature fptr) = unsafePerformIO $ do
         unsafePackByteString (outBuf, len)
 
 
--- | Convert signature to a normalized lower-S form. 'Nothing' indicates that it
--- was already normal.
-normalizeSignature :: Signature -> Maybe Signature
-normalizeSignature (Signature fptr) = unsafePerformIO $ do
+-- | Convert signature to a normalized lower-S form. The first element of the 
+-- returned pair is 'True' if the given and normalized signatures are different,
+-- otherwise it is 'False' when the signature is already normalized.
+normalizeSignature :: Signature -> (Bool,Signature)
+normalizeSignature signature@(Signature fptr) = unsafePerformIO $ do
     outBuf <- mallocBytes 64
     ret <- withForeignPtr fptr $ Prim.ecdsaSignatureNormalize ctx outBuf
     if isSuccess ret
-        then Just . Signature <$> newForeignPtr finalizerFree outBuf
-        else free outBuf $> Nothing
+        then (True,) . Signature <$> newForeignPtr finalizerFree outBuf
+        else free outBuf $> (False, signature)
 
 
 -- | Parses 'RecoverableSignature' from Compact (65 byte) representation
