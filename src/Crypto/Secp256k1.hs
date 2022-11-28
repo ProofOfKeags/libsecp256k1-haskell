@@ -107,7 +107,6 @@ import qualified Data.ByteString.Char8 as B8
 import Data.Foldable (for_)
 import Data.Hashable (Hashable (hashWithSalt))
 import Data.Memory.PtrMethods (memCompare)
-import Data.Serialize (Serialize (put), get, getByteString, putByteString)
 import Foreign (
     Bits (..),
     ForeignPtr,
@@ -187,11 +186,6 @@ instance NFData SecKey where
     rnf x = seq x ()
 instance Hashable SecKey where
     i `hashWithSalt` k = i `hashWithSalt` exportSecKey k
-instance Serialize SecKey where
-    put = putByteString . exportSecKey
-    get = do
-        Just k <- importSecKey <$> getByteString 32
-        return k
 instance IsString SecKey where
     fromString str =
         fromMaybe (error "Could not decode secret key from hex string") $
