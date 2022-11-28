@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -36,6 +37,7 @@ module Crypto.Secp256k1 (
     importPubKeyXO,
     exportPubKeyXO,
     importSignature,
+    importSignatureDer,
     exportSignatureCompact,
     exportSignatureDer,
     importRecoverableSignature,
@@ -56,6 +58,7 @@ module Crypto.Secp256k1 (
     keyPairPubKeyXY,
     keyPairPubKeyXO,
     xyToXO,
+    normalizeSignature,
 
     -- * Tweaks
     secKeyTweakAdd,
@@ -99,8 +102,10 @@ import Data.String (IsString (..))
 
 -- import Data.String.Conversions (ConvertibleStrings, cs)
 
+import Control.DeepSeq (NFData (rnf))
 import qualified Data.ByteString.Char8 as B8
 import Data.Foldable (for_)
+import Data.Hashable (Hashable (hashWithSalt))
 import Data.Memory.PtrMethods (memCompare)
 import Foreign (
     Bits (..),
@@ -159,7 +164,14 @@ instance Show SecKey where
         secKeyPtr <- ContT (withForeignPtr secKeyFPtr)
         -- avoid allocating a new bytestring because we are only reading from this pointer
         bs <- lift (Data.ByteString.Unsafe.unsafePackCStringLen (castPtr secKeyPtr, 32))
-        pure $ "0x" <> B8.unpack (BA.convertToBase BA.Base16 bs)
+        pure $ quoteString $ B8.unpack (BA.convertToBase BA.Base16 bs)
+instance Read SecKey where
+    readPrec = do
+        String hexString <- lexP
+        maybe pfail return $
+            importSecKey =<< case BA.convertFromBase BA.Base16 (B8.pack hexString) of
+                Left _ -> Nothing
+                Right x -> Just x
 instance Eq SecKey where
     sk == sk' = unsafePerformIO . evalContT $ do
         skp <- ContT $ withForeignPtr (secKeyFPtr sk)
@@ -170,6 +182,16 @@ instance Ord SecKey where
         skp <- ContT $ withForeignPtr (secKeyFPtr sk)
         skp' <- ContT $ withForeignPtr (secKeyFPtr sk')
         lift (memCompare (castPtr skp) (castPtr skp') 32)
+instance NFData SecKey where
+    rnf x = seq x ()
+instance Hashable SecKey where
+    i `hashWithSalt` k = i `hashWithSalt` exportSecKey k
+instance IsString SecKey where
+    fromString str =
+        fromMaybe (error "Could not decode secret key from hex string") $
+            importSecKey =<< case BA.convertFromBase BA.Base16 (B8.pack str) of
+                Left _ -> Nothing
+                Right x -> Just x
 
 
 -- | Public Key with both X and Y coordinates
@@ -177,7 +199,16 @@ newtype PubKeyXY = PubKeyXY {pubKeyXYFPtr :: ForeignPtr Prim.Pubkey64}
 
 
 instance Show PubKeyXY where
-    show pk = "0x" <> B8.unpack (BA.convertToBase BA.Base16 (exportPubKeyXY True pk))
+    show pk = quoteString $ B8.unpack (BA.convertToBase BA.Base16 (exportPubKeyXY True pk))
+
+
+instance Read PubKeyXY where
+    readPrec = do
+        String hexString <- lexP
+        maybe pfail return $
+            importPubKeyXY =<< case BA.convertFromBase BA.Base16 (B8.pack hexString) of
+                Left _ -> Nothing
+                Right x -> Just x
 
 
 instance Eq PubKeyXY where
@@ -194,12 +225,37 @@ instance Ord PubKeyXY where
         pure $ compare res 0
 
 
+instance NFData PubKeyXY where
+    rnf x = seq x ()
+
+
+instance Hashable PubKeyXY where
+    i `hashWithSalt` k = i `hashWithSalt` exportPubKeyXY True k
+
+
+instance IsString PubKeyXY where
+    fromString str =
+        fromMaybe (error "Could not decode public key from hex string") $
+            importPubKeyXY =<< case BA.convertFromBase BA.Base16 (B8.pack str) of
+                Left _ -> Nothing
+                Right x -> Just x
+
+
 -- | Public Key with only an X coordinate.
 newtype PubKeyXO = PubKeyXO {pubKeyXOFPtr :: ForeignPtr Prim.XonlyPubkey64}
 
 
 instance Show PubKeyXO where
-    show pk = "0x" <> B8.unpack (BA.convertToBase BA.Base16 (exportPubKeyXO pk))
+    show pk = quoteString $ B8.unpack (BA.convertToBase BA.Base16 (exportPubKeyXO pk))
+
+
+instance Read PubKeyXO where
+    readPrec = do
+        String hexString <- lexP
+        maybe pfail return $
+            importPubKeyXO =<< case BA.convertFromBase BA.Base16 (B8.pack hexString) of
+                Left _ -> Nothing
+                Right x -> Just x
 
 
 instance Eq PubKeyXO where
@@ -216,6 +272,10 @@ instance Ord PubKeyXO where
         pure $ compare res 0
 
 
+instance NFData PubKeyXO where
+    rnf x = seq x ()
+
+
 -- | Structure containing information equivalent to 'SecKey' and 'PubKeyXY'
 newtype KeyPair = KeyPair {keyPairFPtr :: ForeignPtr Prim.Keypair96}
 
@@ -227,8 +287,13 @@ instance Eq KeyPair where
         (EQ ==) <$> lift (memCompare (castPtr kpp) (castPtr kpp') 32)
 
 
+instance NFData KeyPair where
+    rnf x = seq x ()
+
+
 -- | Structure containing Signature (R,S) data.
 newtype Signature = Signature {signatureFPtr :: ForeignPtr Prim.Sig64}
+    deriving (Generic)
 
 
 instance Show Signature where
@@ -238,6 +303,8 @@ instance Eq Signature where
         sigp <- ContT $ withForeignPtr (signatureFPtr sig)
         sigp' <- ContT $ withForeignPtr (signatureFPtr sig')
         (EQ ==) <$> lift (memCompare (castPtr sigp) (castPtr sigp') 32)
+instance NFData Signature where
+    rnf x = seq x ()
 
 
 -- | Structure containing Signature AND recovery ID
@@ -373,6 +440,17 @@ importSignature bs = unsafePerformIO $
             else free outBuf $> Nothing
 
 
+-- | Parses 'Signature' from DER (any length) representations.
+importSignatureDer :: ByteString -> Maybe Signature
+importSignatureDer bs = unsafePerformIO $
+    unsafeUseByteString bs $ \(inBuf, len) -> do
+        outBuf <- mallocBytes 64
+        ret <- Prim.ecdsaSignatureParseDer ctx outBuf inBuf len
+        if isSuccess ret
+            then Just . Signature <$> newForeignPtr finalizerFree outBuf
+            else free outBuf $> Nothing
+
+
 -- | Serializes 'Signature' to Compact (64 byte) representation
 exportSignatureCompact :: Signature -> ByteString
 exportSignatureCompact (Signature fptr) = unsafePerformIO $ do
@@ -393,6 +471,18 @@ exportSignatureDer (Signature fptr) = unsafePerformIO $ do
         _ret <- withForeignPtr fptr $ Prim.ecdsaSignatureSerializeDer ctx outBuf written
         len <- peek written
         unsafePackByteString (outBuf, len)
+
+
+-- | Convert signature to a normalized lower-S form. The first element of the 
+-- returned pair is 'True' if the given and normalized signatures are different,
+-- otherwise it is 'False' when the signature is already normalized.
+normalizeSignature :: Signature -> (Bool,Signature)
+normalizeSignature signature@(Signature fptr) = unsafePerformIO $ do
+    outBuf <- mallocBytes 64
+    ret <- withForeignPtr fptr $ Prim.ecdsaSignatureNormalize ctx outBuf
+    if isSuccess ret
+        then (True,) . Signature <$> newForeignPtr finalizerFree outBuf
+        else free outBuf $> (False, signature)
 
 
 -- | Parses 'RecoverableSignature' from Compact (65 byte) representation
@@ -763,6 +853,10 @@ pubKeyXOTweakAddCheck PubKeyXO{pubKeyXOFPtr = tweakedFPtr} parity PubKeyXO{pubKe
         tweakPtr <- ContT (withForeignPtr tweakFPtr)
         let parityInt = if parity then 1 else 0
         lift $ isSuccess <$> Prim.xonlyPubkeyTweakAddCheck ctx tweakedPtr parityInt origPtr tweakPtr
+
+
+quoteString :: String -> String
+quoteString x = '"' : x <> "\""
 
 
 foreign import ccall "wrapper"
