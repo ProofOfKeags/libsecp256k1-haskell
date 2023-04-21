@@ -26,7 +26,7 @@ runInRepo v prog args envM = rawSystemIOWithEnv v
 
 autogen :: Args -> ConfigFlags -> IO HookedBuildInfo
 autogen _ flags = do
-    maybeExit $ runInRepo v "sh" ["libtoolize"] Nothing
+    maybeExit $ runInRepo v "sh" [ "-c", "libtoolize"] Nothing
     maybeExit $ runInRepo v "sh" ["./autogen.sh"] Nothing
     return emptyHookedBuildInfo
   where
