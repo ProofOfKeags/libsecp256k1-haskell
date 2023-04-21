@@ -22,8 +22,6 @@ dependencies:
   - transformers >= 0.4.0.0 && <1.0
 library:
   source-dirs: src
-  pkg-config-dependencies:
-    - libsecp256k1
 tests:
   spec:
     main: Main.hs
