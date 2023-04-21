@@ -1,5 +1,5 @@
 name: libsecp256k1
-version: 0.1.0
+version: 0.2.0
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
@@ -10,6 +10,7 @@ license: MIT
 license-file: LICENSE
 github: ProofOfKeags/libsecp256k1-haskell.git
 homepage: http://github.com/ProofOfKeags/secp256k1-haskell#readme
+build-type: Custom
 extra-source-files:
   - CHANGELOG.md
   - README.md
@@ -22,8 +23,17 @@ dependencies:
   - transformers >= 0.4.0.0 && <1.0
 library:
   source-dirs: src
-  pkg-config-dependencies:
-    - libsecp256k1
+  cc-options:
+  - -DHAVE_CONFIG_H
+  - -Wno-error=deprecated-declarations
+  c-sources:
+  - secp256k1/src/secp256k1.c
+  - secp256k1/contrib/lax_der_parsing.c
+  - secp256k1/src/precomputed_ecmult.c
+  - secp256k1/src/precomputed_ecmult_gen.c
+  include-dirs:
+  - secp256k1
+  - secp256k1/include
 tests:
   spec:
     main: Main.hs
@@ -36,3 +46,8 @@ tests:
       - hspec
       - libsecp256k1
       - HUnit
+
+custom-setup:
+  dependencies:
+  - base >= 4.8 && < 5
+  - Cabal >= 1.10

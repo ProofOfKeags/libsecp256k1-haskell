@@ -1,11 +1,11 @@
-cabal-version: 1.12
+cabal-version: 1.24
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.1.
 --
 -- see: https://github.com/sol/hpack
 
 name:           libsecp256k1
-version:        0.1.0
+version:        0.2.0
 synopsis:       Bindings for secp256k1
 description:    Sign and verify signatures using the secp256k1 library.
 category:       Crypto
@@ -16,7 +16,7 @@ maintainer:     keagan.mcclelland@gmail.com
 copyright:      (c) 2017 Jean-Pierre Rupp; (c) 2020 Haskoin Developers; (c) 2022 Keagan McClelland
 license:        MIT
 license-file:   LICENSE
-build-type:     Simple
+build-type:     Custom
 extra-source-files:
     CHANGELOG.md
     README.md
@@ -24,6 +24,11 @@ extra-source-files:
 source-repository head
   type: git
   location: https://github.com/ProofOfKeags/libsecp256k1-haskell.git
+
+custom-setup
+  setup-depends:
+      Cabal >=1.10
+    , base >=4.8 && <5
 
 library
   exposed-modules:
@@ -35,8 +40,15 @@ library
       Paths_libsecp256k1
   hs-source-dirs:
       src
-  pkgconfig-depends:
-      libsecp256k1
+  cc-options: -DHAVE_CONFIG_H -Wno-error=deprecated-declarations
+  include-dirs:
+      secp256k1
+      secp256k1/include
+  c-sources:
+      secp256k1/src/secp256k1.c
+      secp256k1/contrib/lax_der_parsing.c
+      secp256k1/src/precomputed_ecmult.c
+      secp256k1/src/precomputed_ecmult_gen.c
   build-depends:
       base >=4.9 && <5
     , bytestring >=0.10.8 && <0.12
