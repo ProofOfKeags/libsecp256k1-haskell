@@ -26,7 +26,7 @@ runInRepo v prog args envM = rawSystemIOWithEnv v
 
 autogen :: Args -> ConfigFlags -> IO HookedBuildInfo
 autogen _ flags = do
-    maybeExit $ runInRepo v "libtoolize" [] Nothing
+    maybeExit $ runInRepo v "sh" ["libtoolize"] Nothing
     maybeExit $ runInRepo v "sh" ["./autogen.sh"] Nothing
     return emptyHookedBuildInfo
   where
@@ -40,7 +40,7 @@ configure args flags pd lbi = do
         args' = args ++ ["--with-gcc=" ++ ccProg]
     maybeExit $ runInRepo v "sh" args' (Just env')
   where
-    args = "./configure" : "--enable-module-recovery" : "--prefix=/usr" : configureArgs False flags
+    args = "./configure" : "--enable-module-recovery" : "--enable-module-schnorrsig" : configureArgs False flags
     v = fromFlag $ configVerbosity flags
     appendToEnvironment (key, val) [] = [(key, val)]
     appendToEnvironment (key, val) (kv@(k, v) : rest)
