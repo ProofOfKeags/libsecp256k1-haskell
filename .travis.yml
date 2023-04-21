@@ -24,7 +24,7 @@ addons:
   apt:
     packages:
       - libgmp-dev
-      - libsecp256k1-dev
+      - libtool
 
 before_install:
 # Download and unpack the stack executable
